@@ -6,7 +6,7 @@ use embedded_hal_async::delay::DelayNs;
 #[cfg(not(feature = "async"))]
 use embedded_hal::delay::DelayNs;
 
-use crate::{Ready, Uninitialized, ICM42688};
+use crate::{Config, Ready, Uninitialized, ICM42688};
 
 #[derive(Debug, defmt::Format, Copy, Clone)]
 pub struct InitializationError;
@@ -27,11 +27,12 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
     pub async fn initialize(
         mut self,
         mut delay: impl DelayNs,
+        config: Config,
     ) -> Result<ICM42688<SPI, Ready>, InitializationError>
     where
         SPI: embedded_hal_async::spi::SpiDevice,
     {
-        use crate::Ready;
+        use crate::{config::Pin9Function, Ready};
 
         let mut bank0 = self.ll.bank::<0>();
 
@@ -55,7 +56,11 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
 
         bank0
             .int_config()
-            .async_modify(|_, w| w.int1_mode(1).int1_drive_circuit(1))
+            .async_modify(|_, w| {
+                w.int1_mode(1)
+                    .int1_drive_circuit(config.int1.drive as u8)
+                    .int1_polarity(config.int1.polarity as u8)
+            })
             .await
             .unwrap();
         bank0
@@ -70,19 +75,25 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
             .unwrap();
         bank0
             .intf_config1()
-            .async_modify(|_, w| w.afsr(0b01)) // Disable AFSR (undocumented adaptive scale change)
+            .async_modify(|_, w| {
+                w.afsr(0b01); // Disable AFSR (undocumented adaptive scale change)
+                if config.pin9.function == Pin9Function::CLKIN {
+                    w.rtc_mode(1);
+                }
+                w
+            })
             .await
             .unwrap();
 
         bank0
             .gyro_config0()
-            .async_modify(|_, w| w.gyro_fs_sel(0b000).gyro_odr(0b0110))
+            .async_modify(|_, w| w.gyro_fs_sel(0b000).gyro_odr(config.gyro.odr as u8))
             .await
             .unwrap();
 
         bank0
             .accel_config0()
-            .async_modify(|_, w| w.accel_fs_sel(0b000).accel_odr(0b0110))
+            .async_modify(|_, w| w.accel_fs_sel(0b000).accel_odr(config.accel.odr as u8))
             .await
             .unwrap();
 
@@ -128,12 +139,12 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
             .unwrap();
         bank0
             .fifo_config2()
-            .async_modify(|_, w| w.fifo_wm_7_0(0b00000000))
+            .async_modify(|_, w| w.fifo_wm_7_0(config.fifo_watermark.to_le_bytes()[0]))
             .await
             .unwrap();
         bank0
             .fifo_config3()
-            .async_modify(|_, w| w.fifo_wm_11_8(0b0000))
+            .async_modify(|_, w| w.fifo_wm_11_8(config.fifo_watermark.to_le_bytes()[1] & 0b1111))
             .await
             .unwrap();
         bank0
@@ -189,7 +200,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
 
         bank1
             .intf_config5()
-            .async_modify(|_, w| w.pin9_function(0b00)) // Default, INT2
+            .async_modify(|_, w| w.pin9_function(config.pin9.function as u8))
             .await
             .unwrap();
 
@@ -236,7 +247,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
         self.ll
             .bank::<0>()
             .pwr_mgmt0()
-            .async_modify(|_, w| w.gyro_mode(0b11).accel_mode(0b11))
+            .async_modify(|_, w| w.gyro_mode(0b11).accel_mode(config.accel.mode as u8))
             .await
             .unwrap();
 
@@ -253,6 +264,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
     pub fn initialize(
         mut self,
         mut delay: impl DelayNs,
+        config: Config,
     ) -> Result<ICM42688<SPI, Ready>, InitializationError>
     where
         SPI: embedded_hal::spi::SpiDevice,
@@ -280,7 +292,11 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
 
         bank0
             .int_config()
-            .modify(|_, w| w.int1_mode(1).int1_drive_circuit(1))
+            .modify(|_, w| {
+                w.int1_mode(1)
+                    .int1_drive_circuit(config.int1.drive as u8)
+                    .int1_polarity(config.int1.polarity as u8)
+            })
             .unwrap();
         bank0.fifo_config().modify(|_, w| w.fifo_mode(11)).unwrap();
         bank0
@@ -289,17 +305,23 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
             .unwrap();
         bank0
             .intf_config1()
-            .modify(|_, w| w.afsr(0b01)) // Disable AFSR (undocumented adaptive scale change)
+            .modify(|_, w| {
+                w.afsr(0b01); // Disable AFSR (undocumented adaptive scale change)
+                if config.pin9.function == Pin9Function::CLKIN {
+                    w.rtc_mode(1);
+                }
+                w
+            })
             .unwrap();
 
         bank0
             .gyro_config0()
-            .modify(|_, w| w.gyro_fs_sel(0b000).gyro_odr(0b0110))
+            .modify(|_, w| w.gyro_fs_sel(0b000).gyro_odr(config.gyro.odr as u8))
             .unwrap();
 
         bank0
             .accel_config0()
-            .modify(|_, w| w.accel_fs_sel(0b000).accel_odr(0b0110))
+            .modify(|_, w| w.accel_fs_sel(0b000).accel_odr(config.accel.odr as u8))
             .unwrap();
 
         bank0
@@ -339,11 +361,11 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
             .unwrap();
         bank0
             .fifo_config2()
-            .modify(|_, w| w.fifo_wm_7_0(0b00000000))
+            .modify(|_, w| w.fifo_wm_7_0(config.fifo_watermark.to_le_bytes()[0]))
             .unwrap();
         bank0
             .fifo_config3()
-            .modify(|_, w| w.fifo_wm_11_8(0b0000))
+            .modify(|_, w| w.fifo_wm_11_8(config.fifo_watermark.to_le_bytes()[1] & 0b1111))
             .unwrap();
         bank0
             .int_config0()
@@ -387,7 +409,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
 
         bank1
             .intf_config5()
-            .modify(|_, w| w.pin9_function(0b00)) // Default, INT2
+            .modify(|_, w| w.pin9_function(config.pin9.function as u8))
             .unwrap();
 
         bank1.reg_bank_sel().write(|r| r.bank_sel(2)).unwrap();
@@ -420,7 +442,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
         self.ll
             .bank::<0>()
             .pwr_mgmt0()
-            .modify(|_, w| w.gyro_mode(0b11).accel_mode(0b11))
+            .modify(|_, w| w.gyro_mode(0b11).accel_mode(config.accel.mode as u8))
             .unwrap();
 
         // Delay for 200us per the datasheet after writing to PWR_MGMT0

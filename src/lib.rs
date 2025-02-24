@@ -3,11 +3,14 @@
 #![feature(generic_const_exprs)]
 #![cfg_attr(not(doctest), doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")))]
 
+pub mod config;
 pub mod fifo;
 pub mod ll;
 pub mod ready;
 pub mod register_bank;
 pub mod uninitialized;
+
+pub use config::Config;
 
 #[derive(Debug)]
 pub struct Uninitialized;
