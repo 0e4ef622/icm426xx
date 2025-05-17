@@ -353,6 +353,9 @@ macro_rules! impl_register {
                             $(
                                 #[$field_doc]
                                 pub fn $field(&self) -> $ty {
+                                    // let [_, b] = self.0;
+                                    // crate::register_bank::get_bits(b, $first_bit, $last_bit)
+
                                     use core::mem::size_of;
                                     use crate::register_bank::FromBytes;
 
@@ -466,114 +469,31 @@ macro_rules! impl_register {
                             $(
                                 #[$field_doc]
                                 pub fn $field(&mut self, value: $ty) -> &mut Self {
-                                    use crate::register_bank::ToBytes;
+                                    let [_, b] = &mut self.0;
+                                    crate::register_bank::set_bits(b, value, $first_bit, $last_bit);
 
-                                    // Convert value into bytes
-                                    let source = <$ty as ToBytes>::to_bytes(value);
+                                    // crate::register_bank::set_bits2(&mut self.0, value, $first_bit, $last_bit);
 
-                                    // Now, let's figure out where the bytes are located
-                                    // within the register array.
-                                    const START:          usize = $first_bit / 8;
-                                    const END:            usize = $last_bit  / 8 + 1;
-                                    const OFFSET_IN_BYTE: usize = $first_bit % 8;
-
-                                    // Also figure out the length of the value in bits.
-                                    // That's going to come in handy.
-                                    const LEN: usize = $last_bit - $first_bit + 1;
-
-
-                                    // We need to track how many bits are left in the
-                                    // value overall, and in the value's current byte.
-                                    let mut bits_left         = LEN;
-                                    let mut bits_left_in_byte = 8;
-
-                                    // We also need to track how many bits have already
-                                    // been written to the current target byte.
-                                    let mut bits_written_to_byte = 0;
-
-                                    // Now we can take the bytes from the value, shift
-                                    // them, mask them, and write them into the target
-                                    // array.
-                                    let mut source_i  = 0;
-                                    let mut target_i  = START;
-                                    while target_i < END {
-                                        // Values don't always end at byte boundaries,
-                                        // so we need to mask the bytes when writing to
-                                        // the slice.
-                                        // Let's start out assuming we can write to the
-                                        // whole byte of the slice. This will be true
-                                        // for the middle bytes of our value.
-                                        let mut mask = 0xff;
-
-                                        // Let's keep track of the offset we're using to
-                                        // write to this byte. We're going to need it.
-                                        let mut offset_in_this_byte = 0;
-
-                                        // If this is the first byte we're writing to
-                                        // the slice, we need to remove the lower bits
-                                        // of the mask.
-                                        if target_i == START {
-                                            mask <<= OFFSET_IN_BYTE;
-                                            offset_in_this_byte = OFFSET_IN_BYTE;
-                                        }
-
-                                        // If this is the last byte we're writing to the
-                                        // slice, we need to remove the higher bits of
-                                        // the mask. Please note that we could be
-                                        // writing to _both_ the first and the last
-                                        // byte.
-                                        if target_i == END - 1 {
-                                            let shift =
-                                                8 - bits_left - offset_in_this_byte;
-                                            mask <<= shift;
-                                            mask >>= shift;
-                                        }
-
-                                        mask <<= bits_written_to_byte;
-
-                                        // Read the value from `source`
-                                        let value = source[source_i]
-                                            >> 8 - bits_left_in_byte
-                                            << offset_in_this_byte
-                                            << bits_written_to_byte;
-
-                                        // Zero the target bits in the slice, then write
-                                        // the value.
-                                        self.0[HEADER_LEN + target_i] &= !mask;
-                                        self.0[HEADER_LEN + target_i] |= value & mask;
-
-                                        // The number of bits that were expected to be
-                                        // written to the target byte.
-                                        let bits_needed = mask.count_ones() as usize;
-
-                                        // The number of bits we actually wrote to the
-                                        // target byte.
-                                        let bits_used = bits_needed.min(
-                                            bits_left_in_byte - offset_in_this_byte
-                                        );
-
-                                        bits_left -= bits_used;
-                                        bits_written_to_byte += bits_used;
-
-                                        // Did we use up all the bits in the source
-                                        // byte? If so, we can move on to the next one.
-                                        if bits_left_in_byte > bits_used {
-                                            bits_left_in_byte -= bits_used;
-                                        }
-                                        else {
-                                            bits_left_in_byte =
-                                                8 - (bits_used - bits_left_in_byte);
-
-                                            source_i += 1;
-                                        }
-
-                                        // Did we write all the bits in the target byte?
-                                        // If so, we can move on to the next one.
-                                        if bits_used == bits_needed {
-                                            target_i += 1;
-                                            bits_written_to_byte = 0;
-                                        }
-                                    }
+                                    // const START:    usize = $first_bit / 8;
+                                    // const END:      usize = $last_bit  / 8 + 1;
+                                    // const PREFIX_0: usize = $first_bit % 8;
+                                    // const SUFFIX_0: usize = (8 - ($last_bit + 1) % 8) % 8;
+                                    //
+                                    // let mut mask = [0xff_u8; { END - START }];
+                                    // mask[0] <<= PREFIX_0;
+                                    // *mask.last_mut().unwrap() <<= SUFFIX_0;
+                                    // *mask.last_mut().unwrap() >>= SUFFIX_0;
+                                    // let bytes = (value << PREFIX_0).to_le_bytes();
+                                    // for ((byte, w), m) in core::iter::zip(bytes, &mut self.0[HEADER_LEN + START..]).zip(mask) {
+                                    //     *w &= !m;
+                                    //     *w |= byte & m;
+                                    // }
+                                    // if mask.len() > bytes.len() {
+                                    //     let b = *value.to_le_bytes().last().unwrap();
+                                    //     let m = *mask.last().unwrap();
+                                    //     self.0[HEADER_LEN + END - 1] &= !m;
+                                    //     self.0[HEADER_LEN + END - 1] |= (b >> SUFFIX_0) & m;
+                                    // }
 
                                     self
                                 }
@@ -596,6 +516,50 @@ macro_rules! impl_register {
         }
     }
 }
+
+// fn set_bits2(buf: &mut [u8], value: u8, first_bit: u8, last_bit: u8) {
+//     let start:    usize = (first_bit / 8) as usize;
+//     let end:      usize = (last_bit  / 8 + 1) as usize;
+//     let prefix_0: usize = (first_bit % 8) as usize;
+//     let suffix_0: usize = ((8 - (last_bit + 1) % 8) % 8) as usize;
+//
+//     let mut mask = &mut [0xff_u8; 4][..end - start];
+//     mask[0] <<= prefix_0;
+//     *mask.last_mut().unwrap() <<= suffix_0;
+//     *mask.last_mut().unwrap() >>= suffix_0;
+//     let bytes = (value << prefix_0).to_le_bytes();
+//     for ((byte, w), m) in core::iter::zip(bytes, &mut buf[start..]).zip(&mut *mask) {
+//         *w &= !*m;
+//         *w |= byte & *m;
+//     }
+//     if mask.len() > bytes.len() {
+//         let b = *value.to_le_bytes().last().unwrap();
+//         let m = *mask.last().unwrap();
+//         buf[end - 1] &= !m;
+//         buf[end - 1] |= (b >> suffix_0) & m;
+//     }
+// }
+
+fn set_bits(buf: &mut u8, value: u8, first_bit: u8, last_bit: u8) {
+    let start:    usize = (first_bit / 8) as usize;
+    let end:      usize = (last_bit  / 8 + 1) as usize;
+    let prefix_0: usize = (first_bit % 8) as usize;
+    let suffix_0: usize = ((8 - (last_bit + 1) % 8) % 8) as usize;
+
+    let mask = (0xff_u8 << prefix_0) & (0xff_u8 >> suffix_0);
+    let bits = (value << prefix_0) & mask;
+    *buf &= !mask;
+    *buf |= bits;
+}
+
+// fn get_bits(value: u8, first_bit: u8, last_bit: u8) -> u8 {
+//     let start:    usize = (first_bit / 8) as usize;
+//     let end:      usize = (last_bit  / 8 + 1) as usize;
+//     let prefix_0: usize = (first_bit % 8) as usize;
+//     let suffix_0: usize = ((8 - (last_bit + 1) % 8) % 8) as usize;
+//
+//     (value >> prefix_0) & (0xff_u8 >> suffix_0)
+// }
 
 // Helper macro, used internally by `impl_register!`
 macro_rules! impl_rw {
