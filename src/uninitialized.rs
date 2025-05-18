@@ -41,7 +41,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
         // This is required to ensure the device is in a known state
         bank0
             .device_config()
-            .async_modify(|_, w| w.soft_reset_config(1))
+            .async_modify(|w| w.soft_reset_config(1))
             .await
             .unwrap();
 
@@ -54,114 +54,61 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
             return Err(InitializationError);
         }
 
-        bank0
-            .int_config()
-            .async_modify(|_, w| {
+        let bank0_mutations = [
+            bank0.int_config().mutation(|w| {
                 w.int1_mode(1)
                     .int1_drive_circuit(config.int1.drive as u8)
                     .int1_polarity(config.int1.polarity as u8)
-            })
-            .await
-            .unwrap();
-        bank0
-            .fifo_config()
-            .async_modify(|_, w| w.fifo_mode(11))
-            .await
-            .unwrap();
-        bank0
-            .intf_config0()
-            .async_modify(|_, w| w.fifo_count_endian(1).sensor_data_endian(1).ui_sifs_cfg(11))
-            .await
-            .unwrap();
-        bank0
-            .intf_config1()
-            .async_modify(|_, w| {
+            }),
+            bank0.fifo_config().mutation(|w| w.fifo_mode(11)),
+            bank0
+                .intf_config0()
+                .mutation(|w| w.fifo_count_endian(1).sensor_data_endian(1).ui_sifs_cfg(11)),
+            bank0.intf_config1().mutation(|w| {
                 w.afsr(0b01); // Disable AFSR (undocumented adaptive scale change)
                 if config.pin9.function == Pin9Function::CLKIN {
                     w.rtc_mode(1);
                 }
                 w
-            })
-            .await
-            .unwrap();
-
-        bank0
-            .gyro_config0()
-            .async_modify(|_, w| w.gyro_fs_sel(0b000).gyro_odr(config.gyro.odr as u8))
-            .await
-            .unwrap();
-
-        bank0
-            .accel_config0()
-            .async_modify(|_, w| w.accel_fs_sel(0b000).accel_odr(config.accel.odr as u8))
-            .await
-            .unwrap();
-
-        bank0
-            .gyro_config1()
-            .async_modify(|_, w| w.gyro_ui_filt_ord(0b0))
-            .await
-            .unwrap();
-
-        bank0
-            .gyro_accel_config0()
-            .async_modify(|_, w| w.accel_ui_filt_bw(0b00).gyro_ui_filt_bw(0b00))
-            .await
-            .unwrap();
-
-        bank0
-            .accel_config1()
-            .async_modify(|_, w| w.accel_ui_filt_ord(0b0))
-            .await
-            .unwrap();
-        bank0
-            .tmst_config()
-            .async_modify(|_, w| {
+            }),
+            bank0
+                .gyro_config0()
+                .mutation(|w| w.gyro_fs_sel(0b000).gyro_odr(config.gyro.odr as u8)),
+            bank0
+                .accel_config0()
+                .mutation(|w| w.accel_fs_sel(0b000).accel_odr(config.accel.odr as u8)),
+            bank0.gyro_config1().mutation(|w| w.gyro_ui_filt_ord(0b0)),
+            bank0
+                .gyro_accel_config0()
+                .mutation(|w| w.accel_ui_filt_bw(0b00).gyro_ui_filt_bw(0b00)),
+            bank0.accel_config1().mutation(|w| w.accel_ui_filt_ord(0b0)),
+            bank0.tmst_config().mutation(|w| {
                 w.tmst_en(1)
                     .tmst_delta_en(1)
                     .tmst_to_regs_en(1)
                     .tmst_res(1)
                     .tmst_fsync_en(0)
-            })
-            .await
-            .unwrap();
-        bank0
-            .fifo_config1()
-            .async_modify(|_, w| {
+            }),
+            bank0.fifo_config1().mutation(|w| {
                 w.fifo_wm_gt_th(1)
                     .fifo_hires_en(1)
                     .fifo_temp_en(1)
                     .fifo_gyro_en(1)
                     .fifo_accel_en(1)
                     .fifo_tmst_fsync_en(0)
-            })
-            .await
-            .unwrap();
-        bank0
-            .fifo_config2()
-            .async_modify(|_, w| w.fifo_wm_7_0(config.fifo_watermark.to_le_bytes()[0]))
-            .await
-            .unwrap();
-        bank0
-            .fifo_config3()
-            .async_modify(|_, w| w.fifo_wm_11_8(config.fifo_watermark.to_le_bytes()[1] & 0b1111))
-            .await
-            .unwrap();
-        bank0
-            .int_config0()
-            .async_modify(|_, w| w.fifo_ths_int_clear(0b10))
-            .await
-            .unwrap();
-        bank0
-            .int_config1()
-            .async_modify(|_, w| w.int_async_reset(0))
-            .await
-            .unwrap();
-        bank0
-            .int_source0()
-            .async_modify(|_, w| w.fifo_ths_int1_en(1))
-            .await
-            .unwrap();
+            }),
+            bank0
+                .fifo_config2()
+                .mutation(|w| w.fifo_wm_7_0(config.fifo_watermark.to_le_bytes()[0])),
+            bank0
+                .fifo_config3()
+                .mutation(|w| w.fifo_wm_11_8(config.fifo_watermark.to_le_bytes()[1] & 0b1111)),
+            bank0.int_config0().mutation(|w| w.fifo_ths_int_clear(0b10)),
+            bank0.int_config1().mutation(|w| w.int_async_reset(0)),
+            bank0.int_source0().mutation(|w| w.fifo_ths_int1_en(1)),
+        ];
+
+        bank0.apply_mutations(&bank0_mutations).await.unwrap();
 
         bank0
             .reg_bank_sel()
@@ -174,35 +121,24 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
         // Set bank 1
         let mut bank1 = self.ll.bank::<1>();
 
-        bank1
-            .gyro_config_static2()
-            .async_modify(|_, w| w.gyro_nf_dis(0).gyro_aaf_dis(0))
-            .await
-            .unwrap();
-
-        bank1
-            .gyro_config_static3()
-            .async_modify(|_, w| w.gyro_aaf_delt(13))
-            .await
-            .unwrap();
-
-        bank1
-            .gyro_config_static4()
-            .async_modify(|_, w| w.gyro_aaf_deltsqr_7_0(170))
-            .await
-            .unwrap();
-
-        bank1
-            .gyro_config_static5()
-            .async_modify(|_, w| w.gyro_aaf_deltsqr_11_8(0).gyro_aaf_bitshift(8))
-            .await
-            .unwrap();
-
-        bank1
-            .intf_config5()
-            .async_modify(|_, w| w.pin9_function(config.pin9.function as u8))
-            .await
-            .unwrap();
+        let bank1_mutations = [
+            bank1
+                .gyro_config_static2()
+                .mutation(|w| w.gyro_nf_dis(0).gyro_aaf_dis(0)),
+            bank1
+                .gyro_config_static3()
+                .mutation(|w| w.gyro_aaf_delt(13)),
+            bank1
+                .gyro_config_static4()
+                .mutation(|w| w.gyro_aaf_deltsqr_7_0(170)),
+            bank1
+                .gyro_config_static5()
+                .mutation(|w| w.gyro_aaf_deltsqr_11_8(0).gyro_aaf_bitshift(8)),
+            bank1
+                .intf_config5()
+                .mutation(|w| w.pin9_function(config.pin9.function as u8)),
+        ];
+        bank1.apply_mutations(&bank1_mutations).await.unwrap();
 
         bank1
             .reg_bank_sel()
@@ -215,23 +151,18 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
         // Set bank 2
         let mut bank2 = self.ll.bank::<2>();
 
-        bank2
-            .accel_config_static2()
-            .async_modify(|_, w| w.accel_aaf_dis(0).accel_aaf_delt(13))
-            .await
-            .unwrap();
-
-        bank2
-            .accel_config_static3()
-            .async_modify(|_, w| w.accel_aaf_deltsqr_7_0(170))
-            .await
-            .unwrap();
-
-        bank2
-            .accel_config_static4()
-            .async_modify(|_, w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(8))
-            .await
-            .unwrap();
+        let bank2_mutations = [
+            bank2
+                .accel_config_static2()
+                .mutation(|w| w.accel_aaf_dis(0).accel_aaf_delt(13)),
+            bank2
+                .accel_config_static3()
+                .mutation(|w| w.accel_aaf_deltsqr_7_0(170)),
+            bank2
+                .accel_config_static4()
+                .mutation(|w| w.accel_aaf_deltsqr_11_8(0).accel_aaf_bitshift(8)),
+        ];
+        bank2.apply_mutations(&bank2_mutations).await.unwrap();
 
         // Set bank 0
         bank2
@@ -247,7 +178,7 @@ impl<SPI> ICM42688<SPI, Uninitialized> {
         self.ll
             .bank::<0>()
             .pwr_mgmt0()
-            .async_modify(|_, w| w.gyro_mode(0b11).accel_mode(config.accel.mode as u8))
+            .async_modify(|w| w.gyro_mode(0b11).accel_mode(config.accel.mode as u8))
             .await
             .unwrap();
 

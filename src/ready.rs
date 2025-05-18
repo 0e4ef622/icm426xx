@@ -18,7 +18,7 @@ where
         let mut bank0 = self.ll.bank::<0>();
         bank0
             .signal_path_reset()
-            .async_modify(|_, w| w.fifo_flush(1))
+            .async_modify(|w| w.fifo_flush(1))
             .await
             .unwrap();
     }
